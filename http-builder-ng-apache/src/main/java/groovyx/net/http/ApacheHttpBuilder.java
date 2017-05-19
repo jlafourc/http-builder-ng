@@ -61,6 +61,7 @@ import static groovyx.net.http.util.IoUtils.transfer;
  * Generally, this class should not be used directly, the preferred method of instantiation is via one of the two static `configure()` methods of this
  * class or using one of the `configure` methods of `HttpBuilder` with a factory function for this builder.
  */
+@SuppressWarnings("PMD.TooManyMethods")
 public class ApacheHttpBuilder extends HttpBuilder {
 
     private static final Function<HttpObjectConfig, ? extends HttpBuilder> apacheFactory = ApacheHttpBuilder::new;

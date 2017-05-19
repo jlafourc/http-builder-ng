@@ -28,6 +28,7 @@ subprojects {
     apply plugin: 'maven-publish'
     apply plugin: 'jacoco'
     apply plugin: 'findbugs'
+    apply plugin: 'pmd'
 
     group = project.parent.group
     version = project.parent.version
@@ -160,6 +161,17 @@ subprojects {
 
     tasks.withType(JavaCompile) {
         options.compilerArgs << "-Xlint:unchecked" << "-Xlint:deprecation"
+    }
+
+    pmd {
+        ruleSets = [
+            'java-basic',
+            'java-braces',
+            'java-codesize',
+            'java-optimizations',
+            'java-unnecessary',
+            'java-unusedcode'
+        ]
     }
 }
 
