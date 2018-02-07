@@ -15,25 +15,26 @@
  */
 package groovyx.net.http;
 
+import groovy.lang.GroovyShell;
+import groovy.transform.TypeChecked;
 import groovyx.net.http.optional.Csv;
 import groovyx.net.http.optional.Html;
+import org.codehaus.groovy.control.CompilerConfiguration;
+import org.codehaus.groovy.control.customizers.ASTTransformationCustomizer;
+import org.codehaus.groovy.control.customizers.ImportCustomizer;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.HttpCookie;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.util.AbstractMap;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -41,15 +42,7 @@ import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
-import static groovyx.net.http.ChainedHttpConfig.Auth;
-import static groovyx.net.http.ChainedHttpConfig.AuthType;
-import static groovyx.net.http.ChainedHttpConfig.ChainedRequest;
-import static groovyx.net.http.ChainedHttpConfig.ChainedResponse;
-import static groovyx.net.http.ContentTypes.BINARY;
-import static groovyx.net.http.ContentTypes.JSON;
-import static groovyx.net.http.ContentTypes.TEXT;
-import static groovyx.net.http.ContentTypes.URLENC;
-import static groovyx.net.http.ContentTypes.XML;
+import static groovyx.net.http.ChainedHttpConfig.*;
 import static groovyx.net.http.Safe.ifClassIsLoaded;
 import static groovyx.net.http.Safe.register;
 
@@ -60,7 +53,7 @@ public class HttpConfigs {
         private String password;
         private boolean preemptive;
         private AuthType authType;
-
+        
         public void basic(final String user, final String password, final boolean preemptive) {
             this.user = user;
             this.password = password;
@@ -91,7 +84,7 @@ public class HttpConfigs {
         volatile String password;
         volatile boolean preemptive;
         volatile AuthType authType;
-
+        
         public ThreadSafeAuth() { }
 
         public ThreadSafeAuth(final BasicAuth toCopy) {
@@ -100,7 +93,7 @@ public class HttpConfigs {
             this.preemptive = toCopy.preemptive;
             this.authType = toCopy.authType;
         }
-
+        
         public void basic(final String user, final String password, final boolean preemptive) {
             this.user = user;
             this.password = password;
@@ -129,7 +122,6 @@ public class HttpConfigs {
     public static abstract class BaseRequest implements ChainedRequest {
 
         final ChainedRequest parent;
-        HttpVerb verb;
 
         public BaseRequest(final ChainedRequest parent) {
             this.parent = parent;
@@ -142,15 +134,9 @@ public class HttpConfigs {
         public void setCharset(final String val) {
             setCharset(Charset.forName(val));
         }
-
+        
         public void setUri(final String val) {
             getUri().setFull(val);
-        }
-
-        public void setRaw(final String val){
-            UriBuilder uriBuilder = getUri();
-            uriBuilder.setUseRawValues(true);
-            uriBuilder.setFull(val);
         }
 
         public void setUri(final URI val) {
@@ -165,11 +151,11 @@ public class HttpConfigs {
             final BiConsumer<ChainedHttpConfig,ToServer> enc =  getEncoderMap().get(contentType);
             return enc != null ? enc : null;
         }
-
+        
         public void encoder(final String contentType, final BiConsumer<ChainedHttpConfig,ToServer> val) {
             getEncoderMap().put(contentType, val);
         }
-
+        
         public void encoder(final Iterable<String> contentTypes, final BiConsumer<ChainedHttpConfig,ToServer> val) {
             for(String contentType : contentTypes) {
                 encoder(contentType, val);
@@ -184,10 +170,10 @@ public class HttpConfigs {
             getHeaders().put("Accept", String.join(";", values));
         }
 
-        public void setHeaders(final Map<String,CharSequence> toAdd) {
-            final Map<String,CharSequence> h = getHeaders();
+        public void setHeaders(final Map<String,String> toAdd) {
+            final Map<String,String> h = getHeaders();
             if(toAdd != null){
-                for(final Map.Entry<String,CharSequence> entry : toAdd.entrySet()) {
+                for(final Map.Entry<String,String> entry : toAdd.entrySet()) {
                     h.put(entry.getKey(), entry.getValue());
                 }
             }
@@ -200,10 +186,10 @@ public class HttpConfigs {
             if(instant != null && now.isBefore(instant)) {
                 cookie.setMaxAge(instant.getEpochSecond() - now.getEpochSecond());
             }
-
+            
             getCookies().add(cookie);
         }
-
+        
         public void cookie(final String name, final String value, final Date date) {
             cookie(name, value, date == null ? (Instant) null : date.toInstant());
         }
@@ -211,28 +197,18 @@ public class HttpConfigs {
         public void cookie(final String name, final String value, final LocalDateTime dateTime){
             cookie(name, value, dateTime == null ? (Instant) null : dateTime.atZone(ZoneId.systemDefault()).toInstant());
         }
-
-        @Override
-        public HttpVerb getVerb() {
-            return verb;
-        }
-
-        @Override
-        public void setVerb(final HttpVerb verb) {
-            this.verb = verb;
-        }
     }
 
     public static class BasicRequest extends BaseRequest {
         private String contentType;
         private Charset charset;
         private UriBuilder uriBuilder;
-        private final Map<String, CharSequence> headers = new LinkedHashMap<>();
+        private final Map<String,String> headers = new LinkedHashMap<>();
         private Object body;
         private final Map<String,BiConsumer<ChainedHttpConfig,ToServer>> encoderMap = new LinkedHashMap<>();
         private BasicAuth auth = new BasicAuth();
         private List<HttpCookie> cookies = new ArrayList<>(1);
-
+        
         protected BasicRequest(ChainedRequest parent) {
             super(parent);
             this.uriBuilder = (parent == null) ? UriBuilder.basic(null) : UriBuilder.basic(parent.getUri());
@@ -245,11 +221,11 @@ public class HttpConfigs {
         public List<HttpCookie> getCookies() {
             return cookies;
         }
-
+        
         public String getContentType() {
             return contentType;
         }
-
+        
         public void setContentType(final String val) {
             this.contentType = val;
         }
@@ -261,19 +237,19 @@ public class HttpConfigs {
         public Charset getCharset() {
             return charset;
         }
-
+        
         public UriBuilder getUri() {
             return uriBuilder;
         }
-
-        public Map<String,CharSequence> getHeaders() {
+        
+        public Map<String,String> getHeaders() {
             return headers;
         }
-
+        
         public Object getBody() {
             return body;
         }
-
+        
         public void setBody(Object val) {
             this.body = val;
         }
@@ -282,13 +258,13 @@ public class HttpConfigs {
             return auth;
         }
     }
-
+    
     public static class ThreadSafeRequest extends BaseRequest {
-
+        
         private volatile String contentType;
         private volatile Charset charset;
         private volatile UriBuilder uriBuilder;
-        private final ConcurrentMap<String,CharSequence> headers = new ConcurrentHashMap<>();
+        private final ConcurrentMap<String,String> headers = new ConcurrentHashMap<>();
         private volatile Object body;
         private final ConcurrentMap<String,BiConsumer<ChainedHttpConfig,ToServer>> encoderMap = new ConcurrentHashMap<>();
         private final ThreadSafeAuth auth;
@@ -303,7 +279,7 @@ public class HttpConfigs {
         public List<HttpCookie> getCookies() {
             return cookies;
         }
-
+        
         public Map<String,BiConsumer<ChainedHttpConfig,ToServer>> getEncoderMap() {
             return encoderMap;
         }
@@ -311,7 +287,7 @@ public class HttpConfigs {
         public String getContentType() {
             return contentType;
         }
-
+        
         public void setContentType(final String val) {
             this.contentType = val;
         }
@@ -319,23 +295,23 @@ public class HttpConfigs {
         public Charset getCharset() {
             return charset;
         }
-
+        
         public void setCharset(final Charset val) {
             this.charset = val;
         }
-
+        
         public UriBuilder getUri() {
             return uriBuilder;
         }
-
-        public Map<String,CharSequence> getHeaders() {
+        
+        public Map<String,String> getHeaders() {
             return headers;
         }
-
+        
         public Object getBody() {
             return body;
         }
-
+        
         public void setBody(Object val) {
             this.body = val;
         }
@@ -351,7 +327,7 @@ public class HttpConfigs {
         abstract protected BiFunction<FromServer, Object, ?> getSuccess();
         abstract protected BiFunction<FromServer, Object, ?> getFailure();
         abstract protected Map<String,BiFunction<ChainedHttpConfig,FromServer,Object>> getParserMap();
-
+        
         private final ChainedResponse parent;
 
         public ChainedResponse getParent() {
@@ -361,15 +337,15 @@ public class HttpConfigs {
         protected BaseResponse(final ChainedResponse parent) {
             this.parent = parent;
         }
-
+        
         public void when(String code, BiFunction<FromServer, Object, ?> closure) {
             when(Integer.valueOf(code), closure);
         }
-
+        
         public void when(Integer code, BiFunction<FromServer, Object, ?> closure) {
             getByCode().put(code, closure);
         }
-
+        
         public void when(final HttpConfig.Status status, final BiFunction<FromServer, Object, ?> closure) {
             if(status == HttpConfig.Status.SUCCESS) {
                 success(closure);
@@ -382,27 +358,27 @@ public class HttpConfigs {
             if(getByCode().containsKey(code)) {
                 return getByCode().get(code);
             }
-
+            
             if(code < 400 && getSuccess() != null) {
                 return getSuccess();
             }
-
+            
             if(code >= 400 && getFailure() != null) {
                 return getFailure();
             }
 
             return null;
         }
-
+        
         public BiFunction<ChainedHttpConfig,FromServer,Object> parser(final String contentType) {
             final BiFunction<ChainedHttpConfig,FromServer,Object> p = getParserMap().get(contentType);
             return p != null ? p : null;
         }
-
+        
         public void parser(final String contentType, BiFunction<ChainedHttpConfig,FromServer,Object> val) {
             getParserMap().put(contentType, val);
         }
-
+        
         public void parser(final Iterable<String> contentTypes, BiFunction<ChainedHttpConfig,FromServer,Object> val) {
             for(String contentType : contentTypes) {
                 parser(contentType, val);
@@ -420,15 +396,15 @@ public class HttpConfigs {
         private Function<Throwable,?> exceptionHandler;
         private final Map<String,BiFunction<ChainedHttpConfig,FromServer,Object>> parserMap = new LinkedHashMap<>();
         private Class<?> type = Object.class;
-
+        
         protected BasicResponse(final ChainedResponse parent) {
             super(parent);
         }
-
+        
         public Map<String,BiFunction<ChainedHttpConfig,FromServer,Object>> getParserMap() {
             return parserMap;
         }
-
+        
         protected Map<Integer,BiFunction<FromServer, Object, ?>> getByCode() {
             return byCode;
         }
@@ -436,7 +412,7 @@ public class HttpConfigs {
         protected BiFunction<FromServer, Object, ?> getSuccess() {
             return successHandler;
         }
-
+        
         protected BiFunction<FromServer, Object, ?> getFailure() {
             return failureHandler;
         }
@@ -482,7 +458,7 @@ public class HttpConfigs {
         protected Map<String,BiFunction<ChainedHttpConfig,FromServer,Object>> getParserMap() {
             return parserMap;
         }
-
+        
         protected Map<Integer,BiFunction<FromServer, Object, ?>> getByCode() {
             return byCode;
         }
@@ -490,7 +466,7 @@ public class HttpConfigs {
         protected BiFunction<FromServer, Object, ?> getSuccess() {
             return successHandler;
         }
-
+        
         protected BiFunction<FromServer, Object, ?> getFailure() {
             return failureHandler;
         }
@@ -531,45 +507,39 @@ public class HttpConfigs {
         public ChainedHttpConfig getParent() {
             return parent;
         }
-
-        public ChainedHttpConfig configure() {
-            getRequest().setCharset(StandardCharsets.UTF_8);
-            getRequest().encoder(BINARY, NativeHandlers.Encoders::binary);
-            getRequest().encoder(TEXT, (f,s) -> {
-                    try {
-                        NativeHandlers.Encoders.text(f, s);
-                    }
-                    catch(IOException e) {
-                        throw new TransportingException(e);
-                    } });
-
-            getRequest().encoder(URLENC, NativeHandlers.Encoders::form);
-            getRequest().encoder(XML, NativeHandlers.Encoders::xml);
-            getRequest().encoder(JSON, NativeHandlers.Encoders::json);
-
-            getResponse().success(NativeHandlers::success);
-            getResponse().failure(NativeHandlers::failure);
-            getResponse().exception(NativeHandlers::exception);
-
-            getResponse().parser(BINARY, NativeHandlers.Parsers::streamToBytes);
-            getResponse().parser(TEXT, NativeHandlers.Parsers::textToString);
-            getResponse().parser(URLENC, NativeHandlers.Parsers::form);
-            getResponse().parser(XML, NativeHandlers.Parsers::xml);
-            getResponse().parser(JSON, NativeHandlers.Parsers::json);
-
-            return this;
+        
+        public ChainedHttpConfig configure(final String scriptClassPath) {
+            final CompilerConfiguration compilerConfig = new CompilerConfiguration();
+            final ImportCustomizer icustom = new ImportCustomizer();
+            icustom.addImports("groovyx.net.http.NativeHandlers");
+            icustom.addStaticStars("groovyx.net.http.ContentTypes");
+            final Map<String,String> map = Collections.singletonMap("extensions", TYPE_CHECKING_SCRIPT);
+            final ASTTransformationCustomizer ast = new ASTTransformationCustomizer(map, TypeChecked.class);
+            compilerConfig.addCompilationCustomizers(icustom, ast);
+            final GroovyShell shell = new GroovyShell(getClass().getClassLoader(), compilerConfig);
+            shell.setVariable("request", getRequest());
+            shell.setVariable("response", getResponse());
+            
+            try(final InputStream is = getClass().getClassLoader().getResourceAsStream(scriptClassPath)) {
+                final InputStreamReader reader = new InputStreamReader(is);
+                shell.evaluate(reader);
+                return this;
+            }
+            catch(IOException ioe) {
+                throw new RuntimeException("Could not configure main engine", ioe);
+            }
         }
 
         public void context(final String contentType, final Object id, final Object obj) {
             getContextMap().put(new AbstractMap.SimpleImmutableEntry<>(contentType, id), obj);
         }
     }
-
+    
     public static class ThreadSafeHttpConfig extends BaseHttpConfig {
         private final ThreadSafeRequest request;
         private final ThreadSafeResponse response;
         private final ConcurrentMap<Map.Entry<String,Object>,Object> contextMap = new ConcurrentHashMap<>();
-
+        
         public ThreadSafeHttpConfig(final ChainedHttpConfig parent) {
             super(parent);
             if(parent == null) {
@@ -607,7 +577,7 @@ public class HttpConfigs {
         private final BasicRequest request;
         private final BasicResponse response;
         private final Map<Map.Entry<String,Object>,Object> contextMap = new LinkedHashMap<>(1);
-
+        
         public BasicHttpConfig(final ChainedHttpConfig parent) {
             super(parent);
             if(parent == null) {
@@ -641,22 +611,23 @@ public class HttpConfigs {
         }
     }
 
+    private static final String CONFIG = "59f7b2e5d5a78b25c6b21eb3b6b4f9ff77d11671.groovy";
     private static final ThreadSafeHttpConfig root;
 
     static {
-        root = (ThreadSafeHttpConfig) new ThreadSafeHttpConfig(null).configure();
-
+        root = (ThreadSafeHttpConfig) new ThreadSafeHttpConfig(null).configure(CONFIG);
+        
         register(root, ifClassIsLoaded("org.cyberneko.html.parsers.SAXParser"),
                  "text/html", () -> NativeHandlers.Encoders::xml, Html.neckoParserSupplier);
-
+        
         register(root, ifClassIsLoaded("org.jsoup.Jsoup"),
                  "text/html", Html.jsoupEncoderSupplier, Html.jsoupParserSupplier);
-
+        
         if(register(root, ifClassIsLoaded("com.opencsv.CSVReader"),
                     "text/csv", Csv.encoderSupplier, Csv.parserSupplier)) {
             root.context("text/csv", Csv.Context.ID, Csv.Context.DEFAULT_CSV);
         }
-
+        
         if(register(root, ifClassIsLoaded("com.opencsv.CSVReader"),
                     "text/tab-separated-values", Csv.encoderSupplier, Csv.parserSupplier)) {
             root.context("text/tab-separated-values", Csv.Context.ID, Csv.Context.DEFAULT_TSV);
@@ -682,4 +653,6 @@ public class HttpConfigs {
     public static BasicHttpConfig requestLevel(final ChainedHttpConfig parent) {
         return new BasicHttpConfig(parent);
     }
+
+    private static final String TYPE_CHECKING_SCRIPT = "typecheckhttpconfig.groovy";
 }
