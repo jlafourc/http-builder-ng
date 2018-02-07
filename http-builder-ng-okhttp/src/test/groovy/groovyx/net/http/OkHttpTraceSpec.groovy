@@ -13,14 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-unresolvedVariable { var ->
-    if('request' == var.name) {
-        storeType(var, classNodeFor(groovyx.net.http.HttpConfig.Request))
-        handled = true
-    }
+package groovyx.net.http
 
-    if('response' == var.name) {
-        storeType(var, classNodeFor(groovyx.net.http.HttpConfig.Response))
-        handled = true
-    }
+import groovyx.net.http.tk.HttpTraceTestKit
+
+class OkHttpTraceSpec extends HttpTraceTestKit implements UsesOkClient {
 }
